@@ -83,6 +83,7 @@ setup(
     name='jaxKDTree',
     author='Francois Lanusse',
     description='JAX bindings for cudaKTree',
+    ext_modules=[CMakeExtension("jaxkdtree/_jaxkdtree")],
     cmdclass={"build_ext": CMakeBuild},
     packages=find_packages(),
     include_package_data=True,
