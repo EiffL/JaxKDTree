@@ -56,15 +56,16 @@ __global__ void d_knn(uint32_t *d_results,
 {
   int tid = threadIdx.x+blockIdx.x*blockDim.x;
   if (tid >= numQueries) return;
+  const int k = 8;
 
-  cukd::FixedCandidateList<3> result(maxRadius);
+  cukd::FixedCandidateList<k> result(maxRadius);
   float sqrDist
     = cukd::knn
     <cukd::TrivialFloatPointTraits<float3>>
     (result,d_queries[tid],d_nodes,numNodes);
 
-  for(int i=0; i < 3; i++){
-    d_results[tid*3+i] = result.decode_pointID(result.entry[i]);
+  for(int i=0; i < k; i++){
+    d_results[tid*k+i] = result.decode_pointID(result.entry[i]);
  };
 
 }
@@ -84,6 +85,13 @@ void knn(uint32_t *d_results,
 
 namespace jaxkdtree
 {
+
+    struct kNNDescriptor {
+      int nPoints;
+      int k;
+      double radius;
+    };
+
     /// XLA interface ops
     void kNN(cudaStream_t stream, void **buffers,
             const char *opaque, size_t opaque_len)
@@ -92,14 +100,15 @@ namespace jaxkdtree
         float3 *d_queries = (float3 *) buffers[1]; // Input query [N, 3]
         uint32_t* d_results = (uint32_t *) buffers[2]; // Output buffer [N, k]
 
-        // TODO decompress opaque to know the number of points
-        int nPoints = 100;
+
+        const kNNDescriptor &d =
+          *UnpackDescriptor<kNNDescriptor>(opaque, opaque_len);
 
         // Build the KDTree from the provided points
-        cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points, nPoints, stream);
+        cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points, d.nPoints, stream);
 
         // Perform the kNN search
-        knn(d_results, d_queries, nPoints, d_points, nPoints, 10.);
+        knn(d_results, d_queries, d.nPoints, d_points, d.nPoints, d.radius);
     }
 
 
@@ -116,4 +125,8 @@ PYBIND11_MODULE(_jaxkdtree, m)
 {
     // Function registering the custom ops
     m.def("registrations", &jaxkdtree::Registrations);
+    m.def("create_kNN_descriptor", [](int nPoints, int k,  double radius) {
+          return PackDescriptor(jaxkdtree::kNNDescriptor{
+              nPoints, k, radius});
+        });
 }

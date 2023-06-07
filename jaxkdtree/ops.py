@@ -1,36 +1,61 @@
 import numpy as np
+import jax.numpy as jnp
 import jaxlib.mlir.ir as ir
 from jaxlib.hlo_helpers import custom_call
-from functools import partial
 from jax.core import Primitive
 from jax.interpreters import xla
 from jax.interpreters import mlir
 import jax
 from jax.interpreters import ad
+from jax import dtypes
+
+from jaxkdtree import create_kNN_descriptor
+
+from functools import partial, reduce
 
 from typing import Tuple
 
-def kNN(positions):
+def kNN(x, k=8, max_radius=1.):
+    """
+    x: tensor of shape [N, 3]
+    k: int giving you the number of k nearest neighbors to search for. Can be one of [4, 8, 16, 32]
+    radius: float with the maximum radius to consider in the NN search
+    """
     return kNN_p.bind(
-        positions
+        x, k=k, max_radius=max_radius
     )
 
-def kNN_abstract_eval(x):
-  return x.update(shape=x.shape, dtype=np.int32)
+def kNN_abstract_eval(operand, *, k, max_radius):
+  if k not in [ 8, ]:
+    raise ValueError(f'k must be in set of predefined values, got {k}')
+  
+  if not dtypes.issubdtype(operand.dtype, np.floating):
+    raise ValueError('operand must be a floating type')
+
+  # Replacing the last dimension which used to be space by the k nearest neighbors
+  dims = list(operand.shape)
+  assert len(dims) == 2 
+  dims[-1] = k
+  return operand.update(shape=dims, dtype=np.int32)
 
 
-def kNN_lowering(ctx, x):
+def kNN_lowering(ctx, x, *, k, max_radius):
   (x_aval,) = ctx.avals_in
   x_type = ir.RankedTensorType(x.type)
   x_shape = x_type.shape
+  x_shape[1] = k
   out_type = ir.RankedTensorType.get(x_shape, ir.IntegerType.get_signless(32))
   n = len(out_type.shape)
   layout = tuple(range(n - 1, -1, -1))
+
+  opaque = create_kNN_descriptor(x_shape[0], k, max_radius)
+  
   return [
       custom_call(
           "kNN",
           [out_type],
           operands=[x, x],
+          backend_config=opaque,
           operand_layouts=[layout, layout],
           result_layouts=[layout]
       )
