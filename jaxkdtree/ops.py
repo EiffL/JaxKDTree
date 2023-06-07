@@ -11,9 +11,10 @@ from jax import dtypes
 
 from jaxkdtree import create_kNN_descriptor
 
-from functools import partial, reduce
+from functools import partial
 
-from typing import Tuple
+def default_layouts(*shapes):
+    return [range(len(shape) - 1, -1, -1) for shape in shapes]
 
 def kNN(x, k=8, max_radius=1.):
     """
@@ -43,10 +44,8 @@ def kNN_lowering(ctx, x, *, k, max_radius):
   (x_aval,) = ctx.avals_in
   x_type = ir.RankedTensorType(x.type)
   x_shape = x_type.shape
-  x_shape[1] = k
-  out_type = ir.RankedTensorType.get(x_shape, ir.IntegerType.get_signless(32))
-  n = len(out_type.shape)
-  layout = tuple(range(n - 1, -1, -1))
+  out_shape = [x_shape[0], k]
+  out_type = ir.RankedTensorType.get(out_shape, ir.IntegerType.get_signless(32))
 
   opaque = create_kNN_descriptor(x_shape[0], k, max_radius)
   
@@ -54,10 +53,10 @@ def kNN_lowering(ctx, x, *, k, max_radius):
       custom_call(
           "kNN",
           [out_type],
-          operands=[x, x],
+          operands=[x],
           backend_config=opaque,
-          operand_layouts=[layout, layout],
-          result_layouts=[layout]
+          operand_layouts=default_layouts(x_shape),
+          result_layouts=default_layouts(out_shape)
       )
   ]
 

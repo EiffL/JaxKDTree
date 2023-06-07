@@ -47,7 +47,7 @@ pybind11::capsule EncapsulateFunction(T* fn) {
 
 
 // ==================================================================
-__global__ void d_knn(uint32_t *d_results,
+__global__ void d_knn(int32_t *d_results,
                        float3 *d_queries,
                        int numQueries,
                        float3 *d_nodes,
@@ -70,16 +70,17 @@ __global__ void d_knn(uint32_t *d_results,
 
 }
 
-void knn(uint32_t *d_results,
+void knn(int32_t *d_results,
           float3 *d_queries,
           int numQueries,
           float3 *d_nodes,
           int numNodes,
-          float maxRadius)
+          float maxRadius,
+          cudaStream_t stream)
 {
   int bs = 128;
   int nb = cukd::common::divRoundUp(numQueries,bs);
-  d_knn<<<nb,bs>>>(d_results,d_queries,numQueries,d_nodes,numNodes,maxRadius);
+  d_knn<<<nb, bs, 0, stream>>>(d_results,d_queries,numQueries,d_nodes,numNodes,maxRadius);
 }
 
 
@@ -97,9 +98,9 @@ namespace jaxkdtree
             const char *opaque, size_t opaque_len)
     {
         float3 *d_points = (float3 *) buffers[0]; // Input points [N, 3]
-        float3 *d_queries = (float3 *) buffers[1]; // Input query [N, 3]
-        uint32_t* d_results = (uint32_t *) buffers[2]; // Output buffer [N, k]
-
+        float3 *d_queries = d_points;
+        // float3 *d_queries = (float3 *) buffers[1]; // Input query [N, 3]
+        int32_t* d_results = (int32_t *) buffers[1]; // Output buffer [N, k]
 
         const kNNDescriptor &d =
           *UnpackDescriptor<kNNDescriptor>(opaque, opaque_len);
@@ -108,7 +109,7 @@ namespace jaxkdtree
         cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points, d.nPoints, stream);
 
         // Perform the kNN search
-        knn(d_results, d_queries, d.nPoints, d_points, d.nPoints, d.radius);
+        knn(d_results, d_queries, d.nPoints, d_points, d.nPoints, d.radius, stream);
     }
 
 
