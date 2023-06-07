@@ -16,23 +16,23 @@ def kNN(positions):
     )
 
 def kNN_abstract_eval(x):
-  return x.update(shape=x.shape, dtype=x.dtype)
+  return x.update(shape=x.shape, dtype=np.int32)
 
 
 def kNN_lowering(ctx, x):
   (x_aval,) = ctx.avals_in
   x_type = ir.RankedTensorType(x.type)
-  n = len(x_type.shape)
+  x_shape = x_type.shape
+  out_type = ir.RankedTensorType.get(x_shape, ir.IntegerType.get_signless(32))
+  n = len(out_type.shape)
   layout = tuple(range(n - 1, -1, -1))
   return [
       custom_call(
           "kNN",
-          [x_type],
-          operands=[x],
-          operand_layouts=[layout],
-          result_layouts=[layout],
-          has_side_effect=False,
-          operand_output_aliases={0: 0}
+          [out_type],
+          operands=[x, x],
+          operand_layouts=[layout, layout],
+          result_layouts=[layout]
       )
   ]
 

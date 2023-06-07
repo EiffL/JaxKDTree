@@ -4,6 +4,8 @@
 #include "cukd/knn.h"
 
 
+namespace py = pybind11;
+
 // https://en.cppreference.com/w/cpp/numeric/bit_cast
 template <class To, class From>
 typename std::enable_if<sizeof(To) == sizeof(From) && std::is_trivially_copyable<From>::value &&
@@ -43,7 +45,42 @@ pybind11::capsule EncapsulateFunction(T* fn) {
   return pybind11::capsule(bit_cast<void*>(fn), "xla._CUSTOM_CALL_TARGET");
 }
 
-namespace py = pybind11;
+
+// ==================================================================
+__global__ void d_knn(uint32_t *d_results,
+                       float3 *d_queries,
+                       int numQueries,
+                       float3 *d_nodes,
+                       int numNodes,
+                       float maxRadius)
+{
+  int tid = threadIdx.x+blockIdx.x*blockDim.x;
+  if (tid >= numQueries) return;
+
+  cukd::FixedCandidateList<3> result(maxRadius);
+  float sqrDist
+    = cukd::knn
+    <cukd::TrivialFloatPointTraits<float3>>
+    (result,d_queries[tid],d_nodes,numNodes);
+
+  for(int i=0; i < 3; i++){
+    d_results[tid*3+i] = result.decode_pointID(result.entry[i]);
+ };
+
+}
+
+void knn(uint32_t *d_results,
+          float3 *d_queries,
+          int numQueries,
+          float3 *d_nodes,
+          int numNodes,
+          float maxRadius)
+{
+  int bs = 128;
+  int nb = cukd::common::divRoundUp(numQueries,bs);
+  d_knn<<<nb,bs>>>(d_results,d_queries,numQueries,d_nodes,numNodes,maxRadius);
+}
+
 
 namespace jaxkdtree
 {
@@ -52,12 +89,17 @@ namespace jaxkdtree
             const char *opaque, size_t opaque_len)
     {
         float3 *d_points = (float3 *) buffers[0]; // Input points [N, 3]
+        float3 *d_queries = (float3 *) buffers[1]; // Input query [N, 3]
+        uint32_t* d_results = (uint32_t *) buffers[2]; // Output buffer [N, k]
 
         // TODO decompress opaque to know the number of points
         int nPoints = 100;
 
         // Build the KDTree from the provided points
         cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points, nPoints, stream);
+
+        // Perform the kNN search
+        knn(d_results, d_queries, nPoints, d_points, nPoints, 10.);
     }
 
 
