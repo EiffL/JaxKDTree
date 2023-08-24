@@ -47,17 +47,18 @@ def kNN_lowering(ctx, x, *, k, max_radius):
   if len(x_shape) == 2: # No batch dimension
     out_shape = [x_shape[0], k]
     numBatches = 1
+    num_points = x_shape[0]
   elif len(x_shape) == 3: # With batch dimension
     out_shape = [x_shape[0], x_shape[1], k]
     numBatches = x_shape[0]
+    num_points = x_shape[1]
   else:
     raise ValueError('Input tensor rank should be 2 or 3')
 
-  opaque = create_kNN_descriptor(x_shape[-2], k, max_radius, numBatches)
   out_type = ir.RankedTensorType.get(out_shape, ir.IntegerType.get_signless(32))
 
-  opaque = create_kNN_descriptor(x_shape[1], k, max_radius, x_shape[0])
-  
+  opaque = create_kNN_descriptor(num_points, k, max_radius, numBatches)
+    
   return [
       custom_call(
           "kNN",
@@ -72,8 +73,15 @@ def kNN_lowering(ctx, x, *, k, max_radius):
 def kNN_batching_rule(batched_args, batch_dims, k, max_radius):
   x, = batched_args
   bd, = batch_dims
+
+  # Less naive batching
   x = batching.moveaxis(x, bd, 0)
   return kNN_p.bind(x, k=k, max_radius=max_radius), 0
+
+  # # Naive batching
+  # x = batching.moveaxis(x, bd, 0)
+  # batched = [kNN_p.bind(x_slice, k=k, max_radius=max_radius) for x_slice in x]
+  # return jnp.stack(batched), 0
 
 kNN_p = Primitive("kNN")
 kNN_p.def_impl(partial(xla.apply_primitive, kNN_p))

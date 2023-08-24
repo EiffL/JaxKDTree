@@ -111,11 +111,21 @@ namespace jaxkdtree
 
         int numBatches = d.numBatches;
 
-        // Build the KDTree from the provided points
-        cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points, d.nPoints, stream);
+        // Loop over batches, construct KDTree and perform kNN search
+        for (int batchIdx = 0; batchIdx < numBatches; ++batchIdx) {
 
-        // Perform the kNN search
-        knn(d_results, d_queries, numBatches, d.nPoints, d_points, d.nPoints, d.radius, stream);
+            // Construct the KDTree for the current batch
+            cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points + batchIdx * d.nPoints, d.nPoints, stream);
+
+            // Perform the kNN search for the current batch
+            knn(d_results + batchIdx * d.nPoints * d.k, d_queries + batchIdx * d.nPoints, 1, d.nPoints, d_points + batchIdx * d.nPoints, d.nPoints, d.radius, stream);
+        }
+
+        // // Build the KDTree from the provided points
+        // cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points, d.nPoints, stream);
+
+        // // Perform the kNN search
+        // knn(d_results, d_queries, numBatches, d.nPoints, d_points, d.nPoints, d.radius, stream);
     }
 
     // Utility to export ops to XLA
