@@ -1,51 +1,51 @@
-import time
 import jax
 import jax.numpy as np
 import jaxkdtree
+import pytest
 
-n_nodes = 100000
-n_batches = [1, 4, 64]
-x = jax.random.normal(jax.random.PRNGKey(34), (n_batches[-1], n_nodes, 3))
+@pytest.fixture
+def setup_data():
+    """ Generate a random point cloud
+    """
+    n_nodes = 1000
+    n_batch = 32
+    rng = jax.random.PRNGKey(0)
+    x = jax.random.normal(rng, (n_batch, n_nodes, 3))
+    return x,
 
-print(f"===================================")
-for i in range(10):
-    print("No batch dimension")
-    start = time.time()
-    print(f"Point cloud size: {x[i].shape}")
-    print(f"Point cloud sum: {x[i].sum()}")
-    res = jaxkdtree.kNN(x[i], 8, 100.0)
-    print(f"Time: {time.time() - start} s")
-    print(f"Output size: {res.shape}")
-    print(f"Sum of first: {res.sum()}")
-    print(f"===================================")
+def pairwise_distances(point_cloud):
+    """ Compute pairwise distances between points in a point cloud.
+    """
+    dr = point_cloud[:, None, :] - point_cloud[None, :, :]
+    distance_matrix = np.sum(dr**2, axis=-1)
+    return distance_matrix
 
-# Test batching 
+def test_batching(setup_data):
+    """ Test whether batching works as expected by comparing batched and individually generated kNN graphs
+    """
+    x, = setup_data
 
-for n_batch in n_batches:
-    print("With batch dimension")
-    start = time.time()  
-    print(f"Point cloud size: {x[:n_batch].shape}")
-    print(f"Point cloud sum: {x[:10].sum((-1, -2))}")
-    res = jax.vmap(jaxkdtree.kNN, in_axes=(0,None,None))(x[:n_batch], 8, 100.0)
-    # res = jaxkdtree.kNN(x[:n_batch], 8, 100.0)  # The bare op can handle batched inputs, so vmap isn't strictly necessary
-    print(f"Time: {time.time() - start} s")
-    print(f"Output size: {res.shape}")
-    print(f"Sum of first 10: {res[:10].sum((-1, -2))}")
-    print(f"===================================")
+    # Test without batch dimension; just pass individual point clouds
+    no_batch_results = [jaxkdtree.kNN(x[i], 8, 1000.0) for i in range(x.shape[0])]
 
-# Test jit
+    # Test batching 
+    batch_results = jax.vmap(jaxkdtree.kNN, in_axes=(0,None,None))(x, 8, 1000.0)
 
-@jax.jit
-def get_knn(x):
-    return jaxkdtree.kNN(x, 8, 100.0)
+    # Check that results are the same across different batch elements
+    for i in range(x.shape[0]):
+        assert np.allclose(no_batch_results[i], batch_results[i])
 
-for n_batch in n_batches:
-    print("With batch dimension")
-    start = time.time()  
-    print(f"Point cloud size: {x[:n_batch].shape}")
-    print(f"Point cloud sum: {x[:10].sum((-1, -2))}")
-    res = jax.vmap(get_knn)(x[:n_batch])
-    print(f"Time: {time.time() - start} s")
-    print(f"Output size: {res.shape}")
-    print(f"Sum of first 10: {res[:10].sum((-1, -2))}")
-    print(f"===================================")
+def test_pairwise_dist(setup_data):
+    """ Test whether we get the same result using pairwise distances
+    """
+    x, = setup_data
+
+    # Batched kNN
+    batch_results = jax.vmap(jaxkdtree.kNN, in_axes=(0,None,None))(x, 8, 1000.0)
+
+    # Compute pairwise distances and associated NNs
+    distance_matrices = jax.vmap(pairwise_distances)(x)
+    dist_results = np.argsort(distance_matrices, axis=-1)[..., :8]
+
+    # Check that results are the same across different methods
+    assert np.allclose(batch_results, dist_results)
