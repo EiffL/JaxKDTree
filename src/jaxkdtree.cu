@@ -47,6 +47,7 @@ pybind11::capsule EncapsulateFunction(T* fn) {
 
 
 // ==================================================================
+template<int k>
 __global__ void d_knn(int32_t *d_results,
                        float3 *d_queries,
                        int numBatches,
@@ -58,7 +59,7 @@ __global__ void d_knn(int32_t *d_results,
   int tid = threadIdx.x+blockIdx.x*blockDim.x;
   int bid = blockIdx.y;
   if (tid >= numQueries) return;
-  const int k = 8;
+  // const int k = 8;
 
   cukd::FixedCandidateList<k> result(maxRadius);
   float sqrDist
@@ -72,8 +73,35 @@ __global__ void d_knn(int32_t *d_results,
 
 }
 
+// Instantiate concrete values from template
+
+template __global__ void d_knn<8>(int32_t *d_results,
+                       float3 *d_queries,
+                       int numBatches,
+                       int numQueries,
+                       float3 *d_nodes,
+                       int numNodes,
+                       float maxRadius);
+
+template __global__ void d_knn<16>(int32_t *d_results,
+                       float3 *d_queries,
+                       int numBatches,
+                       int numQueries,
+                       float3 *d_nodes,
+                       int numNodes,
+                       float maxRadius);
+
+template __global__ void d_knn<32>(int32_t *d_results,
+                       float3 *d_queries,
+                       int numBatches,
+                       int numQueries,
+                       float3 *d_nodes,
+                       int numNodes,
+                       float maxRadius);
+
 void knn(int32_t *d_results,
          float3 *d_queries,
+         int k,
          int numBatches,
          int numQueries,
          float3 *d_nodes,
@@ -81,10 +109,22 @@ void knn(int32_t *d_results,
          float maxRadius,
          cudaStream_t stream)
 {
-  dim3 bs(128, 1, 1);  // Block size remains the same in the x dimension
+  dim3 bs(128, 1, 1);  
   dim3 grid(cukd::common::divRoundUp(static_cast<uint32_t>(numQueries), static_cast<uint32_t>(bs.x)), numBatches);
 
-  d_knn<<<grid, bs, 0, stream>>>(d_results, d_queries, numBatches, numQueries, d_nodes, numNodes, maxRadius);
+  switch (k) {
+    case 8:
+      d_knn<8><<<grid, bs, 0, stream>>>(d_results, d_queries, numBatches, numQueries, d_nodes, numNodes, maxRadius);
+      break;
+    case 16:
+      d_knn<16><<<grid, bs, 0, stream>>>(d_results, d_queries, numBatches, numQueries, d_nodes, numNodes, maxRadius);
+      break;
+    case 32:
+      d_knn<32><<<grid, bs, 0, stream>>>(d_results, d_queries, numBatches, numQueries, d_nodes, numNodes, maxRadius);
+      break;
+    default:  // Unsupported k
+      break;
+  }
 }
 
 
@@ -118,7 +158,7 @@ namespace jaxkdtree
             cukd::buildTree<cukd::TrivialFloatPointTraits<float3>>(d_points + batchIdx * d.nPoints, d.nPoints, stream);
 
             // Perform the kNN search for the current batch
-            knn(d_results + batchIdx * d.nPoints * d.k, d_queries + batchIdx * d.nPoints, 1, d.nPoints, d_points + batchIdx * d.nPoints, d.nPoints, d.radius, stream);
+            knn(d_results + batchIdx * d.nPoints * d.k, d_queries + batchIdx * d.nPoints, d.k, 1, d.nPoints, d_points + batchIdx * d.nPoints, d.nPoints, d.radius, stream);
         }
 
         // // Build the KDTree from the provided points
