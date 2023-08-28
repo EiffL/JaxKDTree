@@ -28,7 +28,7 @@ def kNN(x, k=8, max_radius=1.):
     )
 
 def kNN_abstract_eval(operand, *, k, max_radius):
-  if k not in [8, 16, 32, ]:
+  if k not in [8, 16, 32, 50, 100, ]:
     raise ValueError(f'k must be in set of predefined values, got {k}')
   
   if not dtypes.issubdtype(operand.dtype, np.floating):

@@ -99,6 +99,22 @@ template __global__ void d_knn<32>(int32_t *d_results,
                        int numNodes,
                        float maxRadius);
 
+template __global__ void d_knn<50>(int32_t *d_results,
+                       float3 *d_queries,
+                       int numBatches,
+                       int numQueries,
+                       float3 *d_nodes,
+                       int numNodes,
+                       float maxRadius);
+
+template __global__ void d_knn<100>(int32_t *d_results,
+                       float3 *d_queries,
+                       int numBatches,
+                       int numQueries,
+                       float3 *d_nodes,
+                       int numNodes,
+                       float maxRadius);
+
 void knn(int32_t *d_results,
          float3 *d_queries,
          int k,
@@ -121,6 +137,12 @@ void knn(int32_t *d_results,
       break;
     case 32:
       d_knn<32><<<grid, bs, 0, stream>>>(d_results, d_queries, numBatches, numQueries, d_nodes, numNodes, maxRadius);
+      break;
+    case 50:
+      d_knn<50><<<grid, bs, 0, stream>>>(d_results, d_queries, numBatches, numQueries, d_nodes, numNodes, maxRadius);
+      break;
+    case 100:
+      d_knn<100><<<grid, bs, 0, stream>>>(d_results, d_queries, numBatches, numQueries, d_nodes, numNodes, maxRadius);
       break;
     default:  // Unsupported k
       break;

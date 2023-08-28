@@ -71,7 +71,7 @@ def test_k(setup_data):
     x = x[:N_BATCH]
 
     # Loop over different number of neighbors
-    for K_NEAREST_NEIGHBORS in [8, 16, 32]:
+    for K_NEAREST_NEIGHBORS in [8, 16, 32, 50, 100]:
 
         # Batched kNN results
         batch_results = jax.vmap(jaxkdtree.kNN, in_axes=(0,None,None))(x, K_NEAREST_NEIGHBORS, DISTANCE_THRESHOLD)
