@@ -59,16 +59,14 @@ def kNN_lowering(ctx, x, *, k, max_radius):
 
   opaque = create_kNN_descriptor(num_points, k, max_radius, numBatches)
     
-  return [
-      custom_call(
-          "kNN",
-          [out_type],
-          operands=[x],
-          backend_config=opaque,
-          operand_layouts=default_layouts(x_shape),
-          result_layouts=default_layouts(out_shape)
-      )
-  ]
+  return custom_call(
+     "kNN",
+     result_types=[out_type],
+     operands=[x],
+     backend_config=opaque,
+     operand_layouts=default_layouts(x_shape),
+     result_layouts=default_layouts(out_shape),
+ ).results
 
 def kNN_batching_rule(batched_args, batch_dims, k, max_radius):
   x, = batched_args
